@@ -1,0 +1,18 @@
+- name: Update grub.cfg
+  block:
+    - name: Update grub.cfg on OS ver < RHEL 9.3
+      ansible.builtin.command:
+        cmd: grub2-mkconfig -o /boot/grub2/grub.cfg
+      register: grub_mkconfig
+      changed_when: grub_mkconfig.rc == 0
+      when:
+        - rhel9STIG_stigrule_257789_Manage
+        - ansible_distribution_version is version('9.3', '<')
+    - name: Update grub.cfg on OS ver >= RHEL 9.3
+      ansible.builtin.command:
+        cmd: grub2-mkconfig -o /boot/grub2/grub.cfg --update-bls-cmdline
+      register: grub_mkconfig
+      changed_when: grub_mkconfig.rc == 0
+      when:
+        - rhel9STIG_stigrule_257789_Manage
+        - ansible_distribution_version is version('9.3', '>=')

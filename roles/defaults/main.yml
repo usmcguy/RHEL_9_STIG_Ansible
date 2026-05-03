@@ -1,0 +1,26 @@
+# V-257778 SV-257778r1134892 RHEL-09-211015 SRG-OS-000480-GPOS-00227
+rhel9STIG_stigrule_257778_Manage: true
+rhel9STIG_stigrule_257778__baseos_Baseurl: https://cdn.redhat.com/content/dist/rhel9/$releasever/x86_64/baseos/os
+rhel9STIG_stigrule_257778__appstream_Baseurl: https://cdn.redhat.com/content/dist/rhel9/$releasever/x86_64/appstream/os
+rhel9STIG_stigrule_257778__dnf_State: latest
+rhel9STIG_stigrule_257778_repo_file: stig
+# V-257781 SV-257781r991589 RHEL-09-211030 SRG-OS-000480-GPOS-00227
+rhel9STIG_stigrule_257781_Manage: true
+# V-257782 SV-257782r991589 RHEL-09-211035 SRG-OS-000480-GPOS-00227
+rhel9STIG_stigrule_257782_Manage: true
+# V-257787 SV-257787r1184288 RHEL-09-212010 SRG-OS-000080-GPOS-00048
+rhel9STIG_stigrule_257787_Manage: true
+rhel9STIG_stigrule_257787_grub_password: ChangeMe_!@12#$34
+# V-257788 SV-257788r1044838 RHEL-09-212015 SRG-OS-000480-GPOS-00227
+rhel9STIG_stigrule_257788_Manage: true
+# V-257789 SV-257789r1137691 RHEL-09-212020 SRG-OS-000080-GPOS-00048
+rhel9STIG_stigrule_257789_Manage: true
+rhel9STIG_stigrule_257789_unique_name: grub_root
+# V-257792 SV-257792r1184289 RHEL-09-212035 SRG-OS-000480-GPOS-00227
+rhel9STIG_stigrule_257792_Manage: true
+# V-257793 SV-257793r1044843 RHEL-09-212040 SRG-OS-000480-GPOS-00227
+rhel9STIG_stigrule_257793_Manage: true
+# V-257794 SV-257794r1069362 RHEL-09-212045 SRG-OS-000433-GPOS-00192
+rhel9STIG_stigrule_257794_Manage: true
+# V-257795 SV-257795r1044845 RHEL-09-212050 SRG-OS-000433-GPOS-00193
+rhel9STIG_stigrule_257795_Manage: true

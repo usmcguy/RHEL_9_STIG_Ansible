@@ -1,0 +1,490 @@
+- name: Check for EFI directory
+  ansible.builtin.stat:
+    path: /sys/firmware/efi
+    get_checksum: false
+    get_mime: false
+  register: efi_dir
+
+- name: Set boot_mode fact
+  ansible.builtin.set_fact:
+    boot_mode: "{{ 'UEFI' if efi_dir.stat.exists else 'BIOS' }}"
+
+- name: Slurp /etc/login.defs
+  ansible.builtin.slurp:
+    path: /etc/login.defs
+  register: login_defs_raw
+  no_log: true
+
+- name: Decode login.defs content
+  ansible.builtin.set_fact:
+    login_defs: "{{ login_defs_raw.content | b64decode }}"
+  no_log: true
+
+- name: Slurp /etc/default/useradd
+  ansible.builtin.slurp:
+    src: /etc/default/useradd
+  register: useradd_file
+  no_log: true
+
+- name: Set default_home_path
+  ansible.builtin.set_fact:
+    default_home_path: "{{ useradd_file.content
+                        | b64decode
+                        | regex_search('^HOME=(.*)$', '\\1', multiline=True)
+                        | join(',') }}"
+
+- name: Extract UID/SYS_UID ranges from login.defs
+  ansible.builtin.set_fact:
+    # sys_uid_min: "{{ login_defs | regex_search('^SYS_UID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['201'], true) | first | int }}"
+    sys_uid_max: "{{ login_defs | regex_search('^SYS_UID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['999'], true) | first | int }}"
+    uid_min: "{{ login_defs | regex_search('^UID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['1000'], true) | first | int }}"
+    # uid_max: "{{ login_defs | regex_search('^UID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['60000'], true) | first | int }}"
+    # sys_gid_min: "{{ login_defs | regex_search('^SYS_GID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['201'], true) | first | int }}"
+    sys_gid_max: "{{ login_defs | regex_search('^SYS_GID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['999'], true) | first | int }}"
+    gid_min: "{{ login_defs | regex_search('^GID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['1000'], true) | first | int }}"
+    # gid_max: "{{ login_defs | regex_search('^GID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['60000'], true) | first | int }}"
+
+- name: Get user account info
+  ansible.builtin.getent:
+    database: passwd
+  register: getent_passwd
+
+- name: Create interactive user list
+  ansible.builtin.set_fact:
+    interactive_user_list: "{{ interactive_user_list | default([]) + [item] }}"
+  loop: "{{ ansible_facts.getent_passwd | dict2items }}"
+  no_log: true
+  when:
+    - item.value is sequence
+    - item.value[1] | int >= ( uid_min | int )
+    - "'nologin' not in item.value[4]"
+    - item.value[4] != "/"
+
+- name: Print list of discovered interactive users
+  ansible.builtin.debug:
+    msg: "{{ interactive_user_list | map(attribute='key') | list | join(', ') }}"
+
+- name: Create system account list
+  ansible.builtin.set_fact:
+    system_acct_list: "{{ system_acct_list | default([]) + [item] }}"
+  loop: "{{ ansible_facts.getent_passwd | dict2items }}"
+  no_log: true
+  when:
+    - item.value is sequence
+    - item.value[1] | int <= ( sys_uid_max | int )
+
+- name: Print list of discovered system accounts
+  ansible.builtin.debug:
+    msg: "{{ system_acct_list | map(attribute='key') | list | join(', ') }}"
+
+- name: Get group account info
+  ansible.builtin.getent:
+    database: group
+  register: getent_group
+
+- name: Create non-system group list
+  ansible.builtin.set_fact:
+    nonsystem_group_list: "{{ nonsystem_group_list | default([]) + [item] }}"
+  loop: "{{ ansible_facts.getent_group | dict2items }}"
+  no_log: true
+  when:
+    - item.value is sequence
+    - item.value[1] | int >= ( gid_min | int )
+
+- name: Print list of discovered non-system groups
+  ansible.builtin.debug:
+    msg: "{{ nonsystem_group_list | map(attribute='key') | list | join(', ') }}"
+
+- name: Create system group list
+  ansible.builtin.set_fact:
+    system_group_list: "{{ system_group_list | default([]) + [item] }}"
+  loop: "{{ ansible_facts.getent_group | dict2items }}"
+  no_log: true
+  when:
+    - item.value is sequence
+    - item.value[1] | int <= ( sys_gid_max | int )
+
+- name: Print list of discovered system groups
+  ansible.builtin.debug:
+    msg: "{{ system_group_list | map(attribute='key') | list | join(', ') }}"
+
+# V-257778 SV-257778r1134892 RHEL-09-211015 SRG-OS-000480-GPOS-00227
+# https://access.redhat.com/security/team/key
+# key in repo is from official ISO
+- name: Copy RPM signing key
+  ansible.builtin.copy:
+    src: files/RPM-GPG-KEY-redhat-release
+    dest: /etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: stigrule_257778__dnf_repoinfo
+  ansible.builtin.command:
+    cmd: dnf repoinfo
+  register: dnf_repoinfo
+  changed_when: false
+  when: rhel9STIG_stigrule_257778_Manage
+
+- name: stigrule_257778__add_repository_rhel9_baseos
+  ansible.builtin.yum_repository:
+    name: rhel-9-for-x86_64-baseos-rpms
+    description: Red Hat Enterprise Linux 9 for x86_64 - BaseOS (RPMs)
+    file: "{{ rhel9STIG_stigrule_257778_repo_file }}"
+    baseurl: "{{ rhel9STIG_stigrule_257778__baseos_Baseurl }}"
+    gpgcheck: true
+    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+    enabled: true
+    mode: '0644'
+  when:
+    - rhel9STIG_stigrule_257778_Manage
+    - rhel9STIG_stigrule_257778__baseos_Baseurl is defined
+    - rhel9STIG_stigrule_257778__baseos_Baseurl not in dnf_repoinfo.stdout
+
+- name: stigrule_257778__add_repository_rhel9_appstream
+  ansible.builtin.yum_repository:
+    name: rhel-9-for-x86_64-appstream-rpms
+    description: Red Hat Enterprise Linux 9 for x86_64 - AppStream (RPMs)
+    file: "{{ rhel9STIG_stigrule_257778_repo_file }}"
+    baseurl: "{{ rhel9STIG_stigrule_257778__appstream_Baseurl }}"
+    gpgcheck: true
+    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+    enabled: true
+    mode: '0644'
+  when:
+    - rhel9STIG_stigrule_257778_Manage
+    - rhel9STIG_stigrule_257778__appstream_Baseurl is defined
+    - rhel9STIG_stigrule_257778__appstream_Baseurl not in dnf_repoinfo.stdout
+
+- name: stigrule_257778__dnf_update
+  ansible.builtin.dnf:
+    name: '*'
+    state: "{{ rhel9STIG_stigrule_257778__dnf_State }}"
+    update_cache: true
+    skip_broken: true
+    lock_timeout: 60
+    update_only: true
+  when: rhel9STIG_stigrule_257778_Manage
+
+# V-257781 SV-257781r991589 RHEL-09-211030 SRG-OS-000480-GPOS-00227
+- name: Get default target to boot into
+  ansible.builtin.command:
+    cmd: systemctl get-default
+  changed_when: false
+  register: boot_target
+  when: rhel9STIG_stigrule_257781_Manage
+
+- name: stigrule_257781_set_boot_target
+  ansible.builtin.command:
+    cmd: systemctl set-default multi-user.target
+  when:
+    - rhel9STIG_stigrule_257781_Manage
+    - "'multi-user.target' not in boot_target.stdout"
+
+# V-257782 SV-257782r991589 RHEL-09-211035 SRG-OS-000480-GPOS-00227
+- name: stigrule_257782_rng_tools
+  ansible.builtin.dnf:
+    name: rng-tools
+    state: present
+  when: rhel9TIG_stigrule_257782_Manage
+
+- name: stigrule_257782_rngd_enable
+  ansible.builtin.service:
+    name: rngd.service
+    enabled: true
+    state: started
+  when:
+    - rhel9STIG_stigrule_257782_Manage
+
+# V-257787 SV-257787r1184288 RHEL-09-212010 SRG-OS-000080-GPOS-00048
+- name: Check for grub2_password
+  ansible.builtin.command: grep -iw grub2_password /boot/grub2/user.cfg
+  register: grub_pass_check_bios
+  changed_when: false
+  no_log: true
+  when:
+    - rhel9STIG_stigrule_257787_Manage
+    - boot_mode == "BIOS"
+
+- name: stigrule_257787__set_grub_pass
+  ansible.builtin.expect:
+    command: grub2-setpassword
+    responses:
+      (?i)Password: "{{ rhel9STIG_stigrule_257787_grub_password }}"
+      (?i)Confirm password: "{{ rhel9STIG_stigrule_257787_grub_password }}"
+  no_log: true
+  when:
+    - rhel9STIG_stigrule_257787_Manage
+    - boot_mode == "BIOS"
+    - grub_pass_check_bios.stderr  | length > 0
+
+# V-257788 SV-257788r1044838 RHEL-09-212015 SRG-OS-000480-GPOS-00227
+- name: Check grubby config for systemd.confirm_spawn
+  ansible.builtin.command:
+    cmd: grubby --info=ALL | grep args | grep 'systemd.confirm_spawn'
+  changed_when: false
+  register: grubby_confirm_spawn
+  when: rhel9STIG_stigrule_257788_Manage
+
+- name: stigrule_257788__disable_interactive_boot
+  ansible.builtin.command:
+    cmd: grubby --update-kernel=ALL --remove-args="systemd.confirm_spawn"
+  when:
+    - rhel9STIG_stigrule_257788_Manage
+    - grubby_confirm_spawn.stdout_lines | length > 0
+
+# V-257789 SV-257789r1137691 RHEL-09-212020 SRG-OS-000080-GPOS-00048
+- name: Ensure grub2-tools present
+  ansible.builtin.package:
+    name: grub2-tools
+    state: present
+  when: rhel9STIG_stigrule_257789_Manage
+
+- name: Get current superuser value
+  ansible.builtin.shell: |
+    set -o pipefail
+    grep 'set superusers=' /etc/grub.d/01_users | awk -F'"' '{print $2}' || true
+  register: current_superuser
+  changed_when: false
+  when: rhel9STIG_stigrule_257789_Manage
+
+- name: Get current password_pbkdf2 value
+  ansible.builtin.shell: |
+    set -o pipefail
+    grep 'password_pbkdf2' /etc/grub.d/01_users | awk -F' ' '{print $2}' || true
+  register: password_pbkdf2_user
+  changed_when: false
+  when: rhel9STIG_stigrule_257789_Manage
+
+- name: Chown /etc/grub.d/01_users
+  ansible.builtin.file:
+    path: /etc/grub.d/01_users
+    owner: root
+    group: root
+    mode: '0755'
+  when: rhel9STIG_stigrule_257789_Manage
+
+- name: STIGrule_257789__change_superuser_unique
+  ansible.builtin.lineinfile:
+    path: /etc/grub.d/01_users
+    regexp: '^(.*set superusers=)"[^"]*"'
+    line: '\1"{{ rhel9STIG_stigrule_257789_unique_name }}"'
+    backrefs: true
+  when:
+    - rhel9STIG_stigrule_257789_Manage
+    - current_superuser.stdout_lines | intersect(interactive_user_list | map(attribute='key') | list) | length > 0
+  register: superuser_updated
+  notify: Update grub.cfg
+
+- name: STIGrule_257789__change_pbkdf2_to_unique
+  ansible.builtin.lineinfile:
+    path: /etc/grub.d/01_users
+    regexp: '^(.*password_pbkdf2 )\S+(\s+\S+)?$'
+    line: '\1"{{ rhel9STIG_stigrule_257789_unique_name }}"\2'
+    backrefs: true
+  when:
+    - rhel9STIG_stigrule_257789_Manage
+    - password_pbkdf2_user.stdout_lines | intersect(interactive_user_list | map(attribute='key') | list) | length > 0
+  notify: Update grub.cfg
+
+# V-257792 SV-257792r1184289 RHEL-09-212035 SRG-OS-000480-GPOS-00227
+- name: Check grubby for vsyscall
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grubby --info=ALL | grep args | grep -v 'vsyscall=none'
+    executable: /bin/bash
+  register: grub2_vsyscall_check
+  changed_when: false
+  failed_when: false
+  when: rhel9STIG_stigrule_257792_Manage
+
+- name: Check /etc/default/grub for vsyscall
+  ansible.builtin.command: grep -E 'vsyscall(=|[[:space:]])' /etc/default/grub
+  register: grub_vsyscall_check
+  changed_when: false
+  failed_when: false
+  when: rhel9STIG_stigrule_257792_Manage
+
+- name: STIGrule_257792__grub_add_vsyscall
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
+    replace: '\1 vsyscall=none"'
+  when:
+    - rhel9STIG_stigrule_257792_Manage
+    - grub_vsyscall_check.rc != 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257792__grub_set_vsyscall
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '(vsyscall)(=|\s+)[^\s"]*'
+    replace: '\1=none'
+  when:
+    - rhel9STIG_stigrule_257792_Manage
+    - grub_vsyscall_check.rc == 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257792__grub2_set_vsyscall
+  ansible.builtin.command: "grubby --update-kernel=ALL --args='vsyscall=none'"
+  register: vsyscall_result
+  changed_when: vsyscall_result.rc == 0
+  notify: Update grub.cfg
+  when:
+    - rhel9STIG_stigrule_257792_Manage
+    - "'vsyscall=none' not in grub2_vsyscall_check.stdout"
+
+# V-257793 SV-257793r1044843 RHEL-09-212040 SRG-OS-000480-GPOS-00227
+- name: Check grubby for page_poison
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grubby --info=ALL | grep args | grep -v 'page_poison=1'
+    executable: /bin/bash
+  register: grub2_poison_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257793_Manage
+
+- name: Check /etc/default/grub for page_poison
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grep -E 'page_poison(=|[[:space:]])' /etc/default/grub
+    executable: /bin/bash
+  register: grub_poison_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257793_Manage
+
+- name: STIGrule_257793__grub_add_page_poison
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
+    replace: '\1 page_poison=1"'
+  when:
+    - rhel9STIG_stigrule_257793_Manage
+    - grub_poison_check.rc != 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257793__grub_update_page_poison
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '(page_poison)(=|\s+)[^\s"]*'
+    replace: '\1=1'
+  when:
+    - rhel9STIG_stigrule_257793_Manage
+    - grub_poison_check.rc == 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257793__grubby_set_page_poison
+  ansible.builtin.command: "grubby --update-kernel=ALL --args='page_poison=1'"
+  register: page_poison_result
+  changed_when: page_poison_result.rc == 0
+  notify: Update grub.cfg
+  when:
+    - rhel9STIG_stigrule_257793_Manage
+    - "'page_poison=1' not in grub2_poison_check.stdout"
+
+# V-257794 SV-257794r1069362 RHEL-09-212045 SRG-OS-000433-GPOS-00192
+- name: Check grubby for init_on_free
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grubby --info=ALL | grep args | grep -v 'init_on_free=1'
+    executable: /bin/bash
+  register: grub2_init_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257794_Manage
+
+- name: Check /etc/default/grub for init_on_free
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grep -E 'init_on_free(=|[[:space:]])' /etc/default/grub || true
+  register: grub_init_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257794_Manage
+
+- name: STIGrule_257794__grub_add_init_on_free
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
+    replace: '\1 init_on_free=1"'
+  when:
+    - rhel9STIG_stigrule_257794_Manage
+    - grub_init_check.stdout | length == 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257794__grub_set_init_on_free
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '(init_on_free)(=|\s+)[^\s"]*'
+    replace: '\1=1'
+  when:
+    - rhel9STIG_stigrule_257794_Manage
+    - grub_init_check.stdout | length > 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257794__grub2_set_init_on_free
+  ansible.builtin.command: "grubby --update-kernel=ALL --args='init_on_free=1'"
+  register: init_result
+  changed_when: init_result.rc == 0
+  notify: Update grub.cfg
+  when:
+    - rhel9STIG_stigrule_257794_Manage
+    - "'init_on_free=1' not in grub2_init_check.stdout"
+
+# V-257795 SV-257795r1044845 RHEL-09-212050 SRG-OS-000433-GPOS-00193
+- name: Check grubby for pti
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grubby --info=ALL | grep args | grep -v 'pti=on'
+    executable: /bin/bash
+  register: grub2_init_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257795_Manage
+
+- name: Check /etc/default/grub for pti
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grep -E 'pti(=|[[:space:]])' /etc/default/grub || true
+  register: grub_init_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257795_Manage
+
+- name: STIGrule_257795__grub_add_pti
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
+    replace: '\1 pti=on"'
+  when:
+    - rhel9STIG_stigrule_257795_Manage
+    - grub_init_check.stdout | length == 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257795__grub_set_pti
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '(pti)(=|\s+)[^\s"]*'
+    replace: '\1=1'
+  when:
+    - rhel9STIG_stigrule_257795_Manage
+    - grub_init_check.stdout | length > 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257795__grub2_set_pti
+  ansible.builtin.command: "grubby --update-kernel=ALL --args='pti=on'"
+  register: init_result
+  changed_when: init_result.rc == 0
+  notify: Update grub.cfg
+  when:
+    - rhel9STIG_stigrule_257795_Manage
+    - "'pti=on' not in grub2_init_check.stdout"
