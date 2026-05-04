@@ -9,105 +9,6 @@
   ansible.builtin.set_fact:
     boot_mode: "{{ 'UEFI' if efi_dir.stat.exists else 'BIOS' }}"
 
-- name: Slurp /etc/login.defs
-  ansible.builtin.slurp:
-    path: /etc/login.defs
-  register: login_defs_raw
-  no_log: true
-
-- name: Decode login.defs content
-  ansible.builtin.set_fact:
-    login_defs: "{{ login_defs_raw.content | b64decode }}"
-  no_log: true
-
-- name: Slurp /etc/default/useradd
-  ansible.builtin.slurp:
-    src: /etc/default/useradd
-  register: useradd_file
-  no_log: true
-
-- name: Set default_home_path
-  ansible.builtin.set_fact:
-    default_home_path: "{{ useradd_file.content
-                        | b64decode
-                        | regex_search('^HOME=(.*)$', '\\1', multiline=True)
-                        | join(',') }}"
-
-- name: Extract UID/SYS_UID ranges from login.defs
-  ansible.builtin.set_fact:
-    # sys_uid_min: "{{ login_defs | regex_search('^SYS_UID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['201'], true) | first | int }}"
-    sys_uid_max: "{{ login_defs | regex_search('^SYS_UID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['999'], true) | first | int }}"
-    uid_min: "{{ login_defs | regex_search('^UID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['1000'], true) | first | int }}"
-    # uid_max: "{{ login_defs | regex_search('^UID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['60000'], true) | first | int }}"
-    # sys_gid_min: "{{ login_defs | regex_search('^SYS_GID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['201'], true) | first | int }}"
-    sys_gid_max: "{{ login_defs | regex_search('^SYS_GID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['999'], true) | first | int }}"
-    gid_min: "{{ login_defs | regex_search('^GID_MIN\\s+([0-9]+)', '\\1', multiline=True) | default(['1000'], true) | first | int }}"
-    # gid_max: "{{ login_defs | regex_search('^GID_MAX\\s+([0-9]+)', '\\1', multiline=True) | default(['60000'], true) | first | int }}"
-
-- name: Get user account info
-  ansible.builtin.getent:
-    database: passwd
-  register: getent_passwd
-
-- name: Create interactive user list
-  ansible.builtin.set_fact:
-    interactive_user_list: "{{ interactive_user_list | default([]) + [item] }}"
-  loop: "{{ ansible_facts.getent_passwd | dict2items }}"
-  no_log: true
-  when:
-    - item.value is sequence
-    - item.value[1] | int >= ( uid_min | int )
-    - "'nologin' not in item.value[4]"
-    - item.value[4] != "/"
-
-- name: Print list of discovered interactive users
-  ansible.builtin.debug:
-    msg: "{{ interactive_user_list | map(attribute='key') | list | join(', ') }}"
-
-- name: Create system account list
-  ansible.builtin.set_fact:
-    system_acct_list: "{{ system_acct_list | default([]) + [item] }}"
-  loop: "{{ ansible_facts.getent_passwd | dict2items }}"
-  no_log: true
-  when:
-    - item.value is sequence
-    - item.value[1] | int <= ( sys_uid_max | int )
-
-- name: Print list of discovered system accounts
-  ansible.builtin.debug:
-    msg: "{{ system_acct_list | map(attribute='key') | list | join(', ') }}"
-
-- name: Get group account info
-  ansible.builtin.getent:
-    database: group
-  register: getent_group
-
-- name: Create non-system group list
-  ansible.builtin.set_fact:
-    nonsystem_group_list: "{{ nonsystem_group_list | default([]) + [item] }}"
-  loop: "{{ ansible_facts.getent_group | dict2items }}"
-  no_log: true
-  when:
-    - item.value is sequence
-    - item.value[1] | int >= ( gid_min | int )
-
-- name: Print list of discovered non-system groups
-  ansible.builtin.debug:
-    msg: "{{ nonsystem_group_list | map(attribute='key') | list | join(', ') }}"
-
-- name: Create system group list
-  ansible.builtin.set_fact:
-    system_group_list: "{{ system_group_list | default([]) + [item] }}"
-  loop: "{{ ansible_facts.getent_group | dict2items }}"
-  no_log: true
-  when:
-    - item.value is sequence
-    - item.value[1] | int <= ( sys_gid_max | int )
-
-- name: Print list of discovered system groups
-  ansible.builtin.debug:
-    msg: "{{ system_group_list | map(attribute='key') | list | join(', ') }}"
-
 # V-257778 SV-257778r1134892 RHEL-09-211015 SRG-OS-000480-GPOS-00227
 # https://access.redhat.com/security/team/key
 # key in repo is from official ISO
@@ -167,7 +68,7 @@
   when: rhel9STIG_stigrule_257778_Manage
 
 # V-257781 SV-257781r991589 RHEL-09-211030 SRG-OS-000480-GPOS-00227
-- name: Get default target to boot into
+- name: Get default boot target
   ansible.builtin.command:
     cmd: systemctl get-default
   changed_when: false
@@ -177,6 +78,8 @@
 - name: stigrule_257781_set_boot_target
   ansible.builtin.command:
     cmd: systemctl set-default multi-user.target
+  register: boot_target_result
+  changed_when: boot_target_result.rc == 0
   when:
     - rhel9STIG_stigrule_257781_Manage
     - "'multi-user.target' not in boot_target.stdout"
