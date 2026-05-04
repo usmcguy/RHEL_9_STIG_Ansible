@@ -167,7 +167,7 @@
     mode: '0755'
   when: rhel9STIG_stigrule_257789_Manage
 
-- name: STIGrule_257789__change_superuser_unique
+- name: stigrule_257789__change_superuser_unique
   ansible.builtin.lineinfile:
     path: /etc/grub.d/01_users
     regexp: '^(.*set superusers=)"[^"]*"'
@@ -179,7 +179,7 @@
   register: superuser_updated
   notify: Update grub.cfg
 
-- name: STIGrule_257789__change_pbkdf2_to_unique
+- name: stigrule_257789__change_pbkdf2_to_unique
   ansible.builtin.lineinfile:
     path: /etc/grub.d/01_users
     regexp: '^(.*password_pbkdf2 )\S+(\s+\S+)?$'
@@ -209,7 +209,7 @@
   failed_when: false
   when: rhel9STIG_stigrule_257792_Manage
 
-- name: STIGrule_257792__grub_add_vsyscall
+- name: stigrule_257792__grub_add_vsyscall
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
@@ -219,7 +219,7 @@
     - grub_vsyscall_check.rc != 0
   notify: Update grub.cfg
 
-- name: STIGrule_257792__grub_set_vsyscall
+- name: stigrule_257792__grub_set_vsyscall
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '(vsyscall)(=|\s+)[^\s"]*'
@@ -229,7 +229,7 @@
     - grub_vsyscall_check.rc == 0
   notify: Update grub.cfg
 
-- name: STIGrule_257792__grub2_set_vsyscall
+- name: stigrule_257792__grub2_set_vsyscall
   ansible.builtin.command: "grubby --update-kernel=ALL --args='vsyscall=none'"
   register: vsyscall_result
   changed_when: vsyscall_result.rc == 0
@@ -261,7 +261,7 @@
   when:
     - rhel9STIG_stigrule_257793_Manage
 
-- name: STIGrule_257793__grub_add_page_poison
+- name: stigrule_257793__grub_add_page_poison
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
@@ -271,7 +271,7 @@
     - grub_poison_check.rc != 0
   notify: Update grub.cfg
 
-- name: STIGrule_257793__grub_update_page_poison
+- name: stigrule_257793__grub_update_page_poison
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '(page_poison)(=|\s+)[^\s"]*'
@@ -281,7 +281,7 @@
     - grub_poison_check.rc == 0
   notify: Update grub.cfg
 
-- name: STIGrule_257793__grubby_set_page_poison
+- name: stigrule_257793__grubby_set_page_poison
   ansible.builtin.command: "grubby --update-kernel=ALL --args='page_poison=1'"
   register: page_poison_result
   changed_when: page_poison_result.rc == 0
@@ -312,7 +312,7 @@
   when:
     - rhel9STIG_stigrule_257794_Manage
 
-- name: STIGrule_257794__grub_add_init_on_free
+- name: stigrule_257794__grub_add_init_on_free
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
@@ -322,7 +322,7 @@
     - grub_init_check.stdout | length == 0
   notify: Update grub.cfg
 
-- name: STIGrule_257794__grub_set_init_on_free
+- name: stigrule_257794__grub_set_init_on_free
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '(init_on_free)(=|\s+)[^\s"]*'
@@ -332,7 +332,7 @@
     - grub_init_check.stdout | length > 0
   notify: Update grub.cfg
 
-- name: STIGrule_257794__grub2_set_init_on_free
+- name: stigrule_257794__grub2_set_init_on_free
   ansible.builtin.command: "grubby --update-kernel=ALL --args='init_on_free=1'"
   register: init_result
   changed_when: init_result.rc == 0
@@ -363,7 +363,7 @@
   when:
     - rhel9STIG_stigrule_257795_Manage
 
-- name: STIGrule_257795__grub_add_pti
+- name: stigrule_257795__grub_add_pti
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
@@ -373,7 +373,7 @@
     - grub_pti_check.stdout | length == 0
   notify: Update grub.cfg
 
-- name: STIGrule_257795__grub_set_pti
+- name: stigrule_257795__grub_set_pti
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '(pti)(=|\s+)[^\s"]*'
@@ -383,7 +383,7 @@
     - grub_pti_check.stdout | length > 0
   notify: Update grub.cfg
 
-- name: STIGrule_257795__grub2_set_pti
+- name: stigrule_257795__grub2_set_pti
   ansible.builtin.command: "grubby --update-kernel=ALL --args='pti=on'"
   register: pti_result
   changed_when: pti_result.rc == 0
@@ -414,7 +414,7 @@
   when:
     - rhel9STIG_stigrule_257796_Manage
 
-- name: STIGrule_257796__grub_add_audit
+- name: stigrule_257796__grub_add_audit
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
@@ -424,7 +424,7 @@
     - grub_audit_check.stdout | length == 0
   notify: Update grub.cfg
 
-- name: STIGrule_257796__grub_set_audit
+- name: stigrule_257796__grub_set_audit
   ansible.builtin.replace:
     path: /etc/default/grub
     regexp: '(audit)(=|\s+)[^\s"]*'
@@ -434,7 +434,7 @@
     - grub_audit_check.stdout | length > 0
   notify: Update grub.cfg
 
-- name: STIGrule_257796__grub2_set_audit
+- name: stigrule_257796__grub2_set_audit
   ansible.builtin.command: "grubby --update-kernel=ALL --args='audit=1'"
   register: audit_result
   changed_when: audit_result.rc == 0
