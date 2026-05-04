@@ -38,5 +38,5 @@ This repository contains an Ansible RHEL 9 Supplemental STIG Playbook intended t
 
 ## Contributors
 
-- Dave King [usmcguy](https://github.com/usmcguy) <br>
+- Dave K [usmcguy](https://github.com/usmcguy) <br>
   [![usmcguy](https://avatars.githubusercontent.com/u/761929?v=4&s=48)](https://github.com/usmcguy)

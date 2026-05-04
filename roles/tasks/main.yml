@@ -445,7 +445,7 @@
       set -o pipefail
       grubby --info=ALL | grep args | grep -v 'pti=on'
     executable: /bin/bash
-  register: grub2_init_check
+  register: grub2_pti_check
   changed_when: false
   when:
     - rhel9STIG_stigrule_257795_Manage
@@ -455,7 +455,7 @@
     cmd: |
       set -o pipefail
       grep -E 'pti(=|[[:space:]])' /etc/default/grub || true
-  register: grub_init_check
+  register: grub_pti_check
   changed_when: false
   when:
     - rhel9STIG_stigrule_257795_Manage
@@ -467,7 +467,7 @@
     replace: '\1 pti=on"'
   when:
     - rhel9STIG_stigrule_257795_Manage
-    - grub_init_check.stdout | length == 0
+    - grub_pti_check.stdout | length == 0
   notify: Update grub.cfg
 
 - name: STIGrule_257795__grub_set_pti
@@ -477,14 +477,65 @@
     replace: '\1=1'
   when:
     - rhel9STIG_stigrule_257795_Manage
-    - grub_init_check.stdout | length > 0
+    - grub_pti_check.stdout | length > 0
   notify: Update grub.cfg
 
 - name: STIGrule_257795__grub2_set_pti
   ansible.builtin.command: "grubby --update-kernel=ALL --args='pti=on'"
-  register: init_result
-  changed_when: init_result.rc == 0
+  register: pti_result
+  changed_when: pti_result.rc == 0
   notify: Update grub.cfg
   when:
     - rhel9STIG_stigrule_257795_Manage
-    - "'pti=on' not in grub2_init_check.stdout"
+    - "'pti=on' not in grub2_pti_check.stdout"
+
+# V-257796 SV-257796r1044847 RHEL-09-212055 SRG-OS-000037-GPOS-00015
+- name: Check grubby for audit
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grubby --info=ALL | grep args | grep -v 'audit=1'
+    executable: /bin/bash
+  register: grub2_audit_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257796_Manage
+
+- name: Check /etc/default/grub for audit
+  ansible.builtin.shell:
+    cmd: |
+      set -o pipefail
+      grep -E 'audit(=|[[:space:]])' /etc/default/grub || true
+  register: grub_audit_check
+  changed_when: false
+  when:
+    - rhel9STIG_stigrule_257796_Manage
+
+- name: STIGrule_257796__grub_add_audit
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '^(GRUB_CMDLINE_LINUX=".*)"$'
+    replace: '\1 audit=1"'
+  when:
+    - rhel9STIG_stigrule_257796_Manage
+    - grub_audit_check.stdout | length == 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257796__grub_set_audit
+  ansible.builtin.replace:
+    path: /etc/default/grub
+    regexp: '(audit)(=|\s+)[^\s"]*'
+    replace: '\1=1'
+  when:
+    - rhel9STIG_stigrule_257796_Manage
+    - grub_audit_check.stdout | length > 0
+  notify: Update grub.cfg
+
+- name: STIGrule_257796__grub2_set_audit
+  ansible.builtin.command: "grubby --update-kernel=ALL --args='audit=1'"
+  register: audit_result
+  changed_when: audit_result.rc == 0
+  notify: Update grub.cfg
+  when:
+    - rhel9STIG_stigrule_257796_Manage
+    - "'audit=1' not in grub2_audit_check.stdout"
